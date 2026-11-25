@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+*.mp4
+*.mov
+*.webm
+data/results/*
+!data/results/.gitkeep

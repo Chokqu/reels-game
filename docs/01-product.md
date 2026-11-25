@@ -1,0 +1,37 @@
+# 01 — Product requirements and event flow
+
+## Purpose and priorities
+
+Reels Night is an event tool for a university computer community. A single operator curates short videos and plays them on a projected admin screen; the audience scores each video on phones. This is not a social network, video hosting service or long-term user management product. Target is one evening with approximately 20–100 phones, not a guaranteed production capacity. Prioritize the actual live voting loop over extra polish. All participants use a browser; no install.
+
+## Roles
+
+**Admin / host:** enters a secret once, chooses videos on their own machine, starts a session and controls every round. The host screen is also the public display, so never show credentials or private identifying information after login. The host decides when to start the first video, when to advance, when to replay and when to end the game. The host can see connected participant count and received vote count, but no individual identities are presented.
+
+**Participant:** scans the QR, joins silently, watches the communal screen, and taps one number on their own phone when invited. No name, account, email, avatar, password, questionnaire or join button between a valid QR and the game. The participant never receives the video itself, playlist filenames, or admin controls. An anonymous random token only prevents accidental duplicate voting and preserves the browser's vote status if reconnecting.
+
+## Detailed happy path
+
+1. Host opens `/admin`. A single token input and submit button. Token supplied by operator in environment; not in the repository or QR.
+2. After authentication, setup shows an empty local media library. Host chooses multiple MP4 files or drops them into the drop area. Browser produces still PNG previews from a frame near one second, determines duration and shows filename. Unreadable media shows a clear error and cannot be selected.
+3. Newly readable files are selected by default. Host toggles cards, removes unwanted files, adds more, changes order (simple up/down buttons mandatory; drag reorder optional only if straightforward), sees selected count and sequence. Files may be changed until session creation. Only selected videos, in displayed order, enter the session. A zero-selection session cannot start.
+4. Clicking `Oturum oluştur` creates a random server-side UUID and freezes selected playlist metadata. Setup transitions to lobby in the same admin document, preserving File objects and object URLs. The QR link points to the exact public origin and `/join/<uuid>`. The host projects this page; the QR, short explanatory label and copyable full link are visible. People join immediately and the count updates. Host can wait as long as desired.
+5. Host clicks `Başlat`. First video plays in the large main area. Participant phones show `Reels izleniyor` and a short instruction to watch the big screen. The current round number is visible. QR stays in the right rail, not over the video.
+6. On the first natural `ended` event for that video, the admin browser sends the current round ID to the server. The server atomically transitions to VOTING and starts a 15-second deadline. If the video cannot play, host sees retry and skip controls; skip must not create fake votes or results. A paused video does not trigger voting.
+7. Each phone now shows a countdown and ten big buttons, 1–10. A tap submits the score immediately; no additional confirmation. Disable buttons while awaiting acknowledgment; on success show `Oyun alındı!`. On timeout retry the same score or resync rather than silently granting a second vote. Host sees counts update and can add 5 seconds repeatedly while voting is open, or end early. No live mean or score histogram until close. Do not auto-close merely because all currently connected users voted.
+8. When deadline arrives or host closes manually, server freezes votes and computes mean, count, histogram (1 through 10). No-vote round is unscored, not zero. Host shows result prominently, phones show mean or no-vote message. Host may replay the same video during voting or after results. Replay does not change deadline, votes, round ID or state; a replay end is ignored. Next video always requires host action after results. The live QR remains visible.
+9. After final selected video reaches results, primary button becomes `Sıralamayı göster`. Host may also finish early from results/lobby (with confirmation; unplayed videos excluded). Leaderboard includes completed rounds and skipped videos clearly marked separately; scored videos ranked by unrounded mean, then vote count descending, then original order. Display mean to two decimals. No votes → unranked at bottom. Never present an unplayed video as scored.
+10. Host clicks any completed or skipped video available locally to replay it. A CSS modal opens over blurred main leaderboard content with portrait video, title, score and close button; QR rail remains sharp and accessible. Clicking close or Escape pauses the modal video and restores list/scroll position. Modal end does not vote. The host can replay repeatedly.
+11. Final screen stays until `Oturumu kapat` is confirmed. Participant phones show `Oyun bitti!` at leaderboard; QR can still be scanned to see that message until session close. After close the old join URL is invalid. A new game gets a new ID. A JSON download is available on the final screen; server also writes result snapshots after each completed round.
+
+## Recovery and edge cases
+
+A network drop is normal. Phone shows `Yeniden bağlanılıyor…` rather than accepting an offline vote. Socket.IO reconnects; on every connect it joins with the same token and session ID, receives current snapshot, and renders it. If it scans the QR again using the same browser/origin, it gets the same token. If a different browser or storage is cleared, duplicate prevention cannot be guaranteed. No fingerprinting or IP-based identity.
+
+Admin connection loss shows a prominent but restrained status and disables state-changing actions. Local video may continue; if it ends offline, remember pending round ID and resend the ended event only if reconnect snapshot still shows that same round PLAYING. Backend timer continues even when admin disconnects. On admin reload local media is lost; resume server state and ask host to reselect missing files by matching filename/size/lastModified, with ambiguity explicitly handled. Do not allow a mismatched video to vote under another ID. Admin controls remain usable to close voting and finish even without media. Full server restart loses active session; backups are for results, not live recovery.
+
+If a client joins during voting, it can vote with the remaining time. If it already voted, it sees voted state. If joins during results, it sees the current result. If old QR or unknown session, show clear invalid/closed screen. A duplicate event, late vote, wrong round ID, invalid score or unauthorized admin command must not change state.
+
+## Non-goals
+
+No automatic fetching/downloading from Instagram, no user video upload to server, no video streaming to phones, no separate screen route, no public game discovery, no login for participants, no player profiles, no comments/chat, no score edits, no strong anti-cheat, no multi-process scaling, no database, no live game restoration after server crash, no automatic new round on replay, no tournament teams. This is deliberately a small tool.
